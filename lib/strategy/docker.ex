@@ -1,14 +1,38 @@
 defmodule Cluster.Strategy.Docker do
   @moduledoc """
+  This clustering strategy works by loading all endpoints in the docker api that matches
+  the configured label. It will fetch the addresses of all endpoints with
+  that label and attempt to connect. It will continually monitor and update its
+  connections every 5s.
+
+  In order for your endpoints to be found they should be returned when you run:
+
+  `docker ps --filter="label=labelName=labelValue"`
+
+  Getting `:ip` to work requires a bit fiddling in the container's CMD, for example:
+
+  ```
+  # vm.args
+  -name app@<%= "${POD_A_RECORD}.${NAMESPACE}.pod.cluster.local" %>
+  ```
+
+  (in an app running as a Distillery release).
+
+  The benefit of using `:dns` over `:ip` is that you can establish a remote shell (as well as
+  run observer) by using `kubectl port-forward` in combination with some entries in `/etc/hosts`.
+
+
+  Defaults to `:ip`.
 
   An example configuration is below:
-
 
       config :libcluster,
         topologies: [
           docker_example: [
             strategy: #{__MODULE__},
             config: [
+              mode: :dns,
+              docker_node_basename: "app",
               docker_endpoint: "http://127.0.0.1:2375",
               label: [
                 "com.docker.compose.project": "downloads",
@@ -81,12 +105,13 @@ defmodule Cluster.Strategy.Docker do
   @spec get_nodes(State.t) :: [atom()]
   defp get_nodes(%State{topology: topology, config: config}) do
     docker_endpoint = Keyword.get(config, :docker_endpoint, @default_docker_endpoint)
+    app_name = Keyword.fetch!(config, :docker_node_basename)
     label = Keyword.get(config, :label, [])
 
     case :httpc.request(:get, {'#{docker_endpoint <> @docker_endpoint_path}', []}, [], []) do
       {:ok, {{_version, 200, _status}, _headers, body}} ->
         containers = Poison.decode!(body) |> filter_containers(label)
-        parse_response(Keyword.get(config, :mode, :ip), containers)
+        parse_response(Keyword.get(config, :mode, :ip), containers, app_name)
       {:ok, {{_version, code, status}, _headers, body}} ->
         warn topology, "cannot query docker (#{code} #{status}): #{inspect body}"
         []
@@ -97,11 +122,18 @@ defmodule Cluster.Strategy.Docker do
 
   end
 
-  defp parse_response(:ip, resp) do
+  defp parse_response(:ip, resp, app_name) do
     Enum.reduce(resp, [], fn
       (%{"NetworkSettings" => %{"Networks" => network}}, acc) ->
         ip = network |> Map.values |> Enum.map(&Map.get(&1, "IPAddress"))
-        acc ++ [:"#{ip}"]
+        acc ++ [:"#{app_name}@#{ip}"]
+    end)
+  end
+
+  defp parse_response(:dns, resp, app_name) do
+    Enum.reduce(resp, [], fn
+      (%{"Id" => id}, acc) ->
+        acc ++ [:"#{app_name}@#{id |> String.slice(0..11)}"]
     end)
   end
 
