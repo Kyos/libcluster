@@ -126,14 +126,22 @@ defmodule Cluster.Strategy.Docker do
     Enum.reduce(resp, [], fn
       (%{"NetworkSettings" => %{"Networks" => network}}, acc) ->
         ip = network |> Map.values |> Enum.map(&Map.get(&1, "IPAddress"))
-        acc ++ [:"#{app_name}@#{ip}"]
+        name = :"#{app_name}@#{ip}}"
+        cond do
+          name === Node.self() -> acc
+          true -> acc ++ [name]
+        end
     end)
   end
 
   defp parse_response(:dns, resp, app_name) do
     Enum.reduce(resp, [], fn
       (%{"Id" => id}, acc) ->
-        acc ++ [:"#{app_name}@#{id |> String.slice(0..11)}"]
+        name = :"#{app_name}@#{String.slice(id, 0..11)}"
+        cond do
+          name === Node.self() -> acc
+          true -> acc ++ [name]
+        end
     end)
   end
 
