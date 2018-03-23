@@ -5,24 +5,21 @@ defmodule Cluster.Strategy.Docker do
   that label and attempt to connect. It will continually monitor and update its
   connections every 5s.
 
+  This can also be used to have an automatic clustering with docker-compose scale, if
+  you specifiy the right labels (as shown on the configuration example below).
+
   In order for your endpoints to be found they should be returned when you run:
 
   `docker ps --filter="label=labelName=labelValue"`
 
-  Getting `:ip` to work requires a bit fiddling in the container's CMD, for example:
+  The easiest way to make this works with docker-compose is to specify this :
 
   ```
   # vm.args
-  -name app@<%= "${POD_A_RECORD}.${NAMESPACE}.pod.cluster.local" %>
+  -sname app
   ```
 
   (in an app running as a Distillery release).
-
-  The benefit of using `:dns` over `:ip` is that you can establish a remote shell (as well as
-  run observer) by using `kubectl port-forward` in combination with some entries in `/etc/hosts`.
-
-
-  Defaults to `:ip`.
 
   An example configuration is below:
 
