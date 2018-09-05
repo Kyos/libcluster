@@ -49,15 +49,12 @@ defmodule Cluster.Strategy.Docker do
   @docker_endpoint_path "/containers/json"
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
-  def init(opts) do
-    state = %State{
-      topology: Keyword.fetch!(opts, :topology),
-      connect: Keyword.fetch!(opts, :connect),
-      disconnect: Keyword.fetch!(opts, :disconnect),
-      list_nodes: Keyword.fetch!(opts, :list_nodes),
-      config: Keyword.fetch!(opts, :config),
-      meta: MapSet.new([])
-    }
+
+  def init([%State{meta: nil} = state]) do
+    init([%State{state | :meta => MapSet.new()}])
+  end
+
+  def init([%State{} = state]) do
     {:ok, load(state)}
   end
 
@@ -107,7 +104,7 @@ defmodule Cluster.Strategy.Docker do
 
     case :httpc.request(:get, {'#{docker_endpoint <> @docker_endpoint_path}', []}, [], []) do
       {:ok, {{_version, 200, _status}, _headers, body}} ->
-        containers = Poison.decode!(body) |> filter_containers(label)
+        containers = Jason.decode!(body) |> filter_containers(label)
         parse_response(Keyword.get(config, :mode, :ip), containers, app_name)
       {:ok, {{_version, code, status}, _headers, body}} ->
         warn topology, "cannot query docker (#{code} #{status}): #{inspect body}"
